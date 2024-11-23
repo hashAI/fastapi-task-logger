@@ -1,12 +1,30 @@
 from datetime import datetime, timezone
+from collections import OrderedDict
+
 from .base import TaskStorage
 
 import logging
 logger = logging.getLogger(__name__)
 
+
+class InMemoryStore(OrderedDict):
+    def __init__(self, max_size, *args, **kwargs):
+        self.max_size = max_size
+        super().__init__(*args, **kwargs)
+    
+    def __setitem__(self, key, value):
+        if key in self:
+            # Update existing key without changing order
+            del self[key]
+        elif len(self) >= self.max_size:
+            # Remove the oldest item (FIFO)
+            self.popitem(last=False)
+        super().__setitem__(key, value)
+
+
 class InMemoryTaskStorage(TaskStorage):
-    def __init__(self):
-        self.store = {}
+    def __init__(self, max_size=1024):
+        self.store = InMemoryStore(max_size=max_size)
 
     async def create_task(self, task_id: str, task_name: str, start_time: datetime, input_params: dict, clone_of: str=None):
         logger.info(f"Background Task task_id: {task_id}, task_name: {task_name}")
@@ -41,6 +59,7 @@ class InMemoryTaskStorage(TaskStorage):
     async def fetch_task(self, task_id: str):
         return self.store.get(task_id)
     
-    async def fetch_tasks(self):
-        return [{"task_id": k, "task_details": v } for k, v in self.store.items()]
-
+    async def fetch_tasks(self, status=None, offset=0, limit=10):
+        status = [status.lower()] if status else ["started", "completed", "failed"]
+        task_list = [{"task_id": k, "task_details": v} for k, v in self.store.items() if v["status"] in status]
+        return len(task_list), task_list[offset: offset+limit]

@@ -37,8 +37,8 @@ def log_task_status(storage):
         register_task(func)  # Automatically register the task
 
         @wraps(func)
-        async def wrapper(*args, clone_of=None, **kwargs):
-            task_id = str(uuid4())
+        async def wrapper(*args, clone_of=None, task_id=None, **kwargs):
+            task_id = task_id or str(uuid4())
             task_name = func.__name__
             start_time = datetime.now(timezone.utc)
 

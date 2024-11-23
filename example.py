@@ -1,11 +1,12 @@
 import asyncio
+from uuid import uuid4
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi_task_logger import InMemoryTaskStorage, log_task_status, get_task
 
 # Initialize FastAPI app and InMemoryTaskStorage
 app = FastAPI()
-storage = InMemoryTaskStorage()
+storage = InMemoryTaskStorage(max_size=10)
 
 # Define a task
 @log_task_status(storage)
@@ -16,21 +17,27 @@ async def example_task(param: int, add_log):
         # Simulate work
         await asyncio.sleep(5)
         await add_log(f"Step {step}/{total_steps} completed")
-    if int(param) < 100:
-        raise ValueError("Param value should be greater than 100")
+    try:
+        if int(param) < 100:
+            raise ValueError("Param value should be greater than 100")
+    except Exception as e:
+        await add_log(f"Error: {str(e)}")
+        raise
     await add_log("Task successfully completed")
     return {"message": "Task completed successfully"}
 
 # Endpoint to start a task
 @app.post("/tasks")
 async def run_task(param: int, background_tasks: BackgroundTasks):
-    background_tasks.add_task(example_task, param)
-    return {"message": "Task has been scheduled"}
+    task_id=str(uuid4())
+    background_tasks.add_task(example_task, param, task_id=task_id)
+    return {"task_id": task_id, "message": "Task has been scheduled"}
 
 # Endpoint to fetch task details
 @app.get("/tasks")
-async def get_task_details():
-    return await storage.fetch_tasks()
+async def get_task_details(status: str = None, offset: int=0, limit: int=10):
+    total, tasks = await storage.fetch_tasks(offset=offset, limit=limit, status=status)
+    return {"tasks": tasks, "total_count": total, "offset": offset, "limit": limit}
 
 # Endpoint to fetch task details
 @app.get("/tasks/{task_id}")
@@ -68,7 +75,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "main:app",  # Path to your app instance
+        "example:app",  # Path to your app instance
         host="127.0.0.1",  # Bind to localhost
         port=8000,  # Port to listen on
         log_level="info",  # Log level (debug, info, warning, error, critical)
